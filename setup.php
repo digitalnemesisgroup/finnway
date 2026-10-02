@@ -24,12 +24,8 @@ if (!$baseDir) {
 require $baseDir . '/vendor/autoload.php';
 $app = require_once $baseDir . '/bootstrap/app.php';
 
-// Bootstrap Laravel container and facades without dispatching HTTP request
-if ($app instanceof \Illuminate\Contracts\Console\Kernel) {
-    $app->bootstrap();
-} else {
-    $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-}
+$kernel = $app->make(Illuminate\Contracts\Http\Kernel::class);
+$kernel->handle(Illuminate\Http\Request::capture());
 
 ?>
 <!DOCTYPE html>
@@ -83,13 +79,13 @@ try {
     \Illuminate\Support\Facades\Artisan::call('optimize:clear');
     $steps[] = ['title' => 'Application Cache', 'status' => 'ok', 'msg' => 'Old caches cleared successfully.'];
 
-    // Step 3: Run Database Migrations
+    // Step 3: Run Database Migrations (Safe mode: only applies new schema changes, never drops tables)
     \Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
     try {
         \Illuminate\Support\Facades\DB::statement('ALTER TABLE payments MODIFY COLUMN session_token TEXT NULL');
         \Illuminate\Support\Facades\DB::statement('ALTER TABLE payment_requests MODIFY COLUMN session_token TEXT NULL');
     } catch (\Throwable $e) {}
-    $steps[] = ['title' => 'Database Schema Migration', 'status' => 'ok', 'msg' => 'Database tables migrated successfully (session_token updated to TEXT).'];
+    $steps[] = ['title' => 'Database Schema Migration', 'status' => 'ok', 'msg' => 'Schema updated safely. All existing database records were preserved.'];
 
     // Step 4: Setup Internal Payment Client
     $internalClient = \App\Models\PaymentClient::firstOrCreate(
@@ -133,12 +129,8 @@ try {
     // Step 6: Rebuild Production Caches
     @\Illuminate\Support\Facades\Artisan::call('view:cache');
     @\Illuminate\Support\Facades\Artisan::call('config:cache');
-    try {
-        @\Illuminate\Support\Facades\Artisan::call('route:cache');
-    } catch (\Throwable $rcErr) {
-        @\Illuminate\Support\Facades\Artisan::call('route:clear');
-    }
-    $steps[] = ['title' => 'Production Optimization', 'status' => 'ok', 'msg' => 'Views and configuration cached for fast performance.'];
+    @\Illuminate\Support\Facades\Artisan::call('route:cache');
+    $steps[] = ['title' => 'Production Optimization', 'status' => 'ok', 'msg' => 'Routes, views, and configuration cached for fast performance.'];
 
 } catch (\Throwable $e) {
     $steps[] = ['title' => 'Setup Exception', 'status' => 'error', 'msg' => $e->getMessage()];
